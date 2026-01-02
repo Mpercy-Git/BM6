@@ -21,6 +21,10 @@
       "connectable": true,
       "manufacturer_id": 31781,
       "manufacturer_data_start": [ 68, 112, 123, 182, 119, 231, 64, 187, 175, 169, 78, 96, 220, 100 ]
+    },
+    {
+      "connectable": true,
+      "service_uuid": "0000fff0-0000-1000-8000-00805f9b34fb"
     }
   ],
   "codeowners": [ "@Rafciq" ],
