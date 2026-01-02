@@ -108,12 +108,26 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
                 KEY_BLUETOOTH_SCANNER: data.Advertisement.Scanner,
             }
         except BM6DeviceError as e:
-            _LOGGER.error("BM6 device error at %s: %s", self.device_address, e)
+            _LOGGER.warning(
+                "BM6 device unavailable at %s (expected if device is not transmitting): %s",
+                self.device_address,
+                e,
+            )
+            # Return cached data if available, otherwise raise to mark unavailable
+            if self.data is not None:
+                _LOGGER.debug("Using cached data for BM6 at %s", self.device_address)
+                return self.data
             raise UpdateFailed(f"BM6 device error: {e}") from e
         except Exception as e:
-            _LOGGER.error(
-                "Unexpected error while reading BM6 at %s: %s", self.device_address, e
+            _LOGGER.warning(
+                "Unexpected error while reading BM6 at %s (expected if device is not transmitting): %s",
+                self.device_address,
+                e,
             )
+            # Return cached data if available, otherwise raise to mark unavailable
+            if self.data is not None:
+                _LOGGER.debug("Using cached data for BM6 at %s", self.device_address)
+                return self.data
             raise UpdateFailed(f"Unexpected error: {e}") from e
 
     def get_diagnostic_data(self) -> dict:
