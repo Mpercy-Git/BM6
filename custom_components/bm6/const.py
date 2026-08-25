@@ -31,10 +31,11 @@ GATT_NOTIFY_VERSION_PREFIX = "d15501"
 CRYPT_KEY = bytearray(
     [108, 101, 97, 103, 101, 110, 100, 255, 254, 48, 49, 48, 48, 48, 48, 57]
 )
-# Timeout for the Bleak client
-BLEAK_CLIENT_TIMEOUT = 10  # Timeout
 # Timeout waiting for the real time data notification from the BM6 device
 BLEAK_NOTIFY_TIMEOUT = 10  # Timeout
+# Connection attempts per update. The connect timeout and the backoff between
+# the attempts belong to bleak_retry_connector.
+CONNECT_MAX_ATTEMPTS = 2
 
 # Configuration keys
 CONF_DEVICE_ADDRESS = "device_address"
