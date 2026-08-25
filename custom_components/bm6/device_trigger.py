@@ -191,8 +191,6 @@ async def async_attach_trigger(
             }
         )
         trigger_type = TRIGGER_TYPES[config[CONF_TYPE]]
-        if not trigger_type:
-            raise ValueError(f"Unknown trigger type {config[CONF_TYPE]}")
         state_config[trigger_type.change_what] = trigger_type.battery_state.value
         state_config = await state_trigger.async_validate_trigger_config(
             hass, state_config

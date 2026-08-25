@@ -9,26 +9,22 @@ validating user input.
 from __future__ import annotations
 
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import json
 import logging
-from bluetooth_adapters import AdapterDetails
-from habluetooth import BaseHaScanner
 import voluptuous as vol
 import aiofiles
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.components.bluetooth.api import _get_manager
-from homeassistant.components.bluetooth.manager import HomeAssistantBluetoothManager
 from homeassistant.components.bluetooth import async_discovered_service_info
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers import selector
 from home_assistant_bluetooth import BluetoothServiceInfoBleak
 
 from .const import (
-    CONF_BLUETOOTH_SCANNER,
     CONF_TEMPERATURE_OFFSET,
     CONF_TEMPERATURE_UNIT,
     CONF_VOLTAGE_OFFSET,
@@ -57,7 +53,6 @@ from .const import (
     TRANSLATION_KEY_BATTERY_STATE_ALGORITHM,
     TRANSLATION_KEY_BATTERY_TYPE,
     TRANSLATION_KEY_BATTERY_VOLTAGE,
-    TRANSLATION_KEY_BLUETOOTH_SCANNER,
 )
 from .battery import (
     battery_voltage_ranges,
@@ -97,11 +92,13 @@ async def build_schema(
     """Build the schema for both config and options flow, handling custom voltage."""
     schema_fields = {}
     if config_page == ConfigPage.MAIN:
-        # manager: HomeAssistantBluetoothManager = _get_manager(hass)
-        # scaners: set[BaseHaScanner] = manager._connectable_scanners | manager._non_connectable_scanners
-        # _LOGGER.debug("Bluetooth scanners: %s", scaners)
         if not is_options_flow:
-            schema_fields[vol.Required(CONF_DEVICE_ADDRESS)] = vol.In(devices)
+            # Preselect the device when it is already known (bluetooth discovery)
+            if (address := data.get(CONF_DEVICE_ADDRESS)) is not None:
+                device_field = vol.Required(CONF_DEVICE_ADDRESS, default=address)
+            else:
+                device_field = vol.Required(CONF_DEVICE_ADDRESS)
+            schema_fields[device_field] = vol.In(devices)
         schema_fields.update(
             {
                 vol.Required(
@@ -242,6 +239,7 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._bluetooth_config: dict[str, Any] = None
         self._data: dict[str, str] = {}
+        self._discovered_devices: dict[str, str] = {}
 
     def _get_name(self, service_info: BluetoothServiceInfoBleak) -> str:
         """Get the name of the device."""
@@ -254,7 +252,7 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Loading Bluetooth configuration from manifest.json")
         try:
             async with aiofiles.open(
-                f"custom_components/{DOMAIN}/manifest.json", encoding="utf-8"
+                Path(__file__).parent / "manifest.json", encoding="utf-8"
             ) as f:
                 manifest_data = await f.read()
             manifest = json.loads(manifest_data)
@@ -311,8 +309,11 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
             "Checking if device %s exist in %s", service_info, bluetooth_config
         )
         is_valid: bool = any(
-            any(item.get("service_data_uuid") == uuid for item in bluetooth_config)
+            any(item.get("service_uuid") == uuid for item in bluetooth_config)
             for uuid in service_info.service_uuids
+        ) or any(
+            any(item.get("service_data_uuid") == uuid for item in bluetooth_config)
+            for uuid in service_info.service_data
         ) or any(
             item.get("manufacturer_id")
             and item.get("manufacturer_data_start")
@@ -344,7 +345,10 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Starting Bluetooth step with discovery info: %s", discovery_info)
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
-        self.context["title_placeholders"] = {"name": self._get_name(discovery_info)}
+        name = self._get_name(discovery_info)
+        self.context["title_placeholders"] = {"name": name}
+        self._discovered_devices = {discovery_info.address: name}
+        self._data[CONF_DEVICE_ADDRESS] = discovery_info.address
         return await self.async_step_bluetooth_confirm()
 
     async def async_step_bluetooth_confirm(
@@ -356,7 +360,7 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = await build_schema(
             self.hass,
             self._data,
-            [self.context["unique_id"]],
+            self._discovered_devices,
             is_options_flow=False,
             config_page=ConfigPage.MAIN,
         )
@@ -390,9 +394,8 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
                     description="BM6 battery monitor",
                     data=self._data,
                 )
-        if self.context.get("unique_id"):
-            self._data[CONF_DEVICE_ADDRESS] = self.context["unique_id"]
-            devices = {self.context["unique_id"]: self.context["title_placeholders"]["name"]}
+        if self._discovered_devices:
+            devices = self._discovered_devices
         else:
             _LOGGER.debug("Getting devices...")
             devices = await self._get_devices()

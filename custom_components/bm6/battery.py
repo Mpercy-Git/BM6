@@ -265,6 +265,12 @@ battery_voltage_ranges = {
         soc=VoltageRange(12.0, 13.5),
         sod=VoltageRange(10.0, 12.0),
     ),
+    (BatteryType.LiFePO4, BatteryVoltage.V6): BatteryRange(
+        dvr=VoltageRange(6.0, 6.75),
+        cvr=VoltageRange(7.3, 7.5),
+        soc=VoltageRange(6.5, 6.75),
+        sod=VoltageRange(6.0, 6.5),
+    ),
     (BatteryType.LiFePO4, BatteryVoltage.V12): BatteryRange(
         dvr=VoltageRange(12.0, 13.5),
         cvr=VoltageRange(14.6, 15.0),
@@ -372,15 +378,16 @@ class Battery:
             self._percent = real_time_data.Percent
             self._state = self._bm6_status_to_battery_state(real_time_data.State)
         else:
-            self._update_percent()
             self._update_state()
+            self._update_percent()
 
     def _update_state(self):
         """Update the state of the battery based on its voltage."""
         if self.info.state_algorithm == BatteryStateAlgorithm.By_Device:
             return
         if self._voltage is None:
-            self._state = None
+            self._state = BatteryState.Unknown
+            return
         if self._voltage < self.range.dvr.min:
             self._state = BatteryState.UnderVoltage
         elif self._voltage > self.range.cvr.max:
@@ -396,8 +403,14 @@ class Battery:
         else:
             self._state = BatteryState.Idle
 
-    def _bm6_status_to_battery_state(self, state: BM6RealTimeState) -> BatteryState:
+    def _bm6_status_to_battery_state(
+        self, state: BM6RealTimeState | int | None
+    ) -> BatteryState:
         """Convert BM6 real-time status to BatteryState."""
+        try:
+            state = BM6RealTimeState(state)
+        except ValueError:
+            return BatteryState.Unknown
         state_mapping = {
             BM6RealTimeState.BatteryOk: BatteryState.Ok,
             BM6RealTimeState.LowVoltage: BatteryState.LowVoltage,
