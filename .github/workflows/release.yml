@@ -4,6 +4,12 @@ on:
   release:
     types:
       - "published"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, for example v1.0.7. The tag has to exist. Its release is created when there is none yet, and the ZIP file is attached to it."
+        required: true
+        type: "string"
 
 jobs:
   release:
@@ -14,14 +20,17 @@ jobs:
       id-token: write
     env:
       BM6_ROOT_DIR: "${{ github.workspace }}/custom_components/bm6"
+      RELEASE_TAG: "${{ github.event.release.tag_name || inputs.tag }}"
     steps:
       - name: "Checkout the repository"
         uses: "actions/checkout@v4.2.1"
+        with:
+          ref: "${{ github.event.release.tag_name || inputs.tag }}"
 
       - name: "Adjust version number"
         shell: bash
         run: |          
-          version="${{ github.event.release.tag_name }}"
+          version="${RELEASE_TAG}"
           version="${version,,}"
           version="${version#v}"
           # update const.py
@@ -45,4 +54,6 @@ jobs:
       - name: "Upload the ZIP file to the release"
         uses: softprops/action-gh-release@v2.2.1
         with:
+          tag_name: "${{ env.RELEASE_TAG }}"
           files: ${{ env.BM6_ROOT_DIR }}/bm6.zip
+          fail_on_unmatched_files: true
