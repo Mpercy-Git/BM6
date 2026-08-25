@@ -9,6 +9,7 @@ validating user input.
 from __future__ import annotations
 
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import json
 import logging
@@ -254,7 +255,7 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Loading Bluetooth configuration from manifest.json")
         try:
             async with aiofiles.open(
-                f"custom_components/{DOMAIN}/manifest.json", encoding="utf-8"
+                Path(__file__).parent / "manifest.json", encoding="utf-8"
             ) as f:
                 manifest_data = await f.read()
             manifest = json.loads(manifest_data)
@@ -311,8 +312,11 @@ class BM6ConfigFlow(ConfigFlow, domain=DOMAIN):
             "Checking if device %s exist in %s", service_info, bluetooth_config
         )
         is_valid: bool = any(
-            any(item.get("service_data_uuid") == uuid for item in bluetooth_config)
+            any(item.get("service_uuid") == uuid for item in bluetooth_config)
             for uuid in service_info.service_uuids
+        ) or any(
+            any(item.get("service_data_uuid") == uuid for item in bluetooth_config)
+            for uuid in service_info.service_data
         ) or any(
             item.get("manufacturer_id")
             and item.get("manufacturer_data_start")

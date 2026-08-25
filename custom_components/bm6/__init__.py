@@ -84,8 +84,8 @@ async def async_unload_entry(
     """Unload a config entry."""
     unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        del hass.data[DOMAIN][entry.entry_id]
-        if len(hass.data[DOMAIN]) == 0:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        if not any(key != COMPONENT for key in hass.data[DOMAIN]):
             hass.data.pop(DOMAIN)
     return unload_ok
 

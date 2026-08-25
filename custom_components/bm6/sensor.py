@@ -143,6 +143,8 @@ class BM6VoltageSensor(BM6SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
+        if self.coordinator.data is None:
+            return {}
         return {
             key: self.coordinator.data.get(key)
             for key in [KEY_VOLTAGE_DEVICE, KEY_VOLTAGE_CORRECTED]
@@ -180,6 +182,8 @@ class BM6TemperatureSensor(BM6SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
+        if self.coordinator.data is None:
+            return {}
         return {
             key: self.coordinator.data.get(key)
             for key in [
@@ -212,6 +216,8 @@ class BM6PercentageSensor(BM6SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
+        if self.coordinator.data is None:
+            return {}
         return {
             key: self.coordinator.data.get(key)
             for key in [
@@ -325,20 +331,19 @@ class BM6DeviceStateSensor(BM6SensorEntity):
 
     @property
     def state(self) -> str:
-        if self.native_value is not None:
+        native_value = self.native_value
+        if native_value is not None:
             try:
-                device_state: BM6RealTimeState = BM6RealTimeState(self.native_value)
-                if device_state == BM6RealTimeState.BatteryOk:
-                    return BatteryState.Ok.value
-                elif device_state == BM6RealTimeState.LowVoltage:
-                    return BatteryState.LowVoltage.value
-                elif device_state == BM6RealTimeState.Charging:
-                    return BatteryState.Charging.value
-                elif isinstance(device_state, int):
-                    return str(device_state)
+                device_state: BM6RealTimeState = BM6RealTimeState(native_value)
             except ValueError:
-                if isinstance(device_state, int):
-                    return str(device_state)
+                # Unknown state code reported by the device - expose it as is
+                return str(native_value)
+            if device_state == BM6RealTimeState.BatteryOk:
+                return BatteryState.Ok.value
+            elif device_state == BM6RealTimeState.LowVoltage:
+                return BatteryState.LowVoltage.value
+            elif device_state == BM6RealTimeState.Charging:
+                return BatteryState.Charging.value
         return BatteryState.Unknown.value
 
     @property

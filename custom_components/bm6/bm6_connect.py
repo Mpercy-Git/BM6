@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
 import logging
 from enum import Enum
@@ -21,6 +22,7 @@ from .const import (
     CHARACTERISTIC_UUID_WRITE,
     CRYPT_KEY,
     BLEAK_CLIENT_TIMEOUT,
+    BLEAK_NOTIFY_TIMEOUT,
     GATT_DATA_REALTIME,
     GATT_DATA_VERSION,
     GATT_NOTIFY_REALTIME_PREFIX,
@@ -207,10 +209,16 @@ class BM6Connector:
                     await client.start_notify(
                         CHARACTERISTIC_UUID_NOTIFY, self._notify_callback
                     )
-                    while self._data is None or self._data.RealTime is None:
-                        await asyncio.sleep(0.5)
-                    _LOGGER.debug("Finishing wait for data from BM6 at %s", self._address)
-                    await client.stop_notify(CHARACTERISTIC_UUID_NOTIFY)
+                    try:
+                        async with asyncio.timeout(BLEAK_NOTIFY_TIMEOUT):
+                            while self._data.RealTime is None:
+                                await asyncio.sleep(0.1)
+                    finally:
+                        _LOGGER.debug(
+                            "Finishing wait for data from BM6 at %s", self._address
+                        )
+                        with suppress(Exception):
+                            await client.stop_notify(CHARACTERISTIC_UUID_NOTIFY)
 
                     # The following code is commented out but can be used to get firmware version data
                     # _LOGGER.debug("Write to BM6 at %s characteristic %s", device.address, CHARACTERISTIC_UUID_WRITE)
@@ -226,16 +234,23 @@ class BM6Connector:
                     # _LOGGER.debug("Finishing wait for data from BM6 at %s", device.address)
                     # await client.stop_notify(CHARACTERISTIC_UUID_NOTIFY)
             except Exception as e:
-                e.add_note = f"Using scanner {scanner.scanner.name}"
+                e.add_note(f"Using scanner {scanner.scanner.name}")
                 exceptions.append(e)
-                _LOGGER.warning("Error while reading BM6 at %s: %s", self._address, e)
-            if not self._data.RealTime:
-                if len(exceptions) > 0:
-                    raise BM6DeviceError(
-                        f"Error while reading BM6 at {self._address}: {exceptions}"
-                    ) from exceptions[0]
-                else:
-                    raise BM6DeviceError(
-                        f"Error while reading BM6 at {self._address}"
-                    )
-        return self._data if self._data else None
+                _LOGGER.warning(
+                    "Error while reading BM6 at %s via scanner %s: %s",
+                    self._address,
+                    scanner.scanner.name,
+                    e,
+                )
+                continue
+            if self._data.RealTime:
+                return self._data
+            exceptions.append(
+                BM6DeviceError(
+                    f"No data received from BM6 at {self._address} "
+                    f"via scanner {scanner.scanner.name}"
+                )
+            )
+        raise BM6DeviceError(
+            f"Error while reading BM6 at {self._address}: {exceptions}"
+        ) from (exceptions[0] if exceptions else None)

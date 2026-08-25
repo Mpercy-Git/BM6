@@ -105,7 +105,9 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
                 KEY_DEVICE_STATE: data.RealTime.State,
                 KEY_RAPID_ACCELERATION: data.RealTime.RapidAcceleration,
                 KEY_RAPID_DECELERATION: data.RealTime.RapidDeceleration,
-                KEY_BLUETOOTH_SCANNER: data.Advertisement.Scanner,
+                KEY_BLUETOOTH_SCANNER: (
+                    data.Advertisement.Scanner if data.Advertisement else None
+                ),
             }
         except BM6DeviceError as e:
             _LOGGER.warning(
