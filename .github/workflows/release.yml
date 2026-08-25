@@ -50,10 +50,15 @@ jobs:
         uses: sigstore/gh-action-sigstore-python@v3.5.0
         with:
           inputs: "${{ env.BM6_ROOT_DIR }}/bm6.zip"
+          # The signing action only attaches the bundle for a release event,
+          # so the upload step below does it for both ways of triggering.
+          release-signing-artifacts: false
 
       - name: "Upload the ZIP file to the release"
         uses: softprops/action-gh-release@v2.2.1
         with:
           tag_name: "${{ env.RELEASE_TAG }}"
-          files: ${{ env.BM6_ROOT_DIR }}/bm6.zip
+          files: |
+            ${{ env.BM6_ROOT_DIR }}/bm6.zip
+            ${{ env.BM6_ROOT_DIR }}/bm6.zip.sigstore.json
           fail_on_unmatched_files: true
