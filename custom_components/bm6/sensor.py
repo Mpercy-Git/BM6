@@ -19,7 +19,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import (
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfElectricPotential,
-    UnitOfTemperature,
     PERCENTAGE,
 )
 
@@ -75,8 +74,6 @@ async def async_setup_entry(
 ) -> None:
     """Set up BM6 sensors based on a config entry."""
     coordinator = config_entry.runtime_data.coordinator
-    await coordinator.async_refresh()
-
     entities = [
         BM6VoltageSensor(coordinator),
         BM6TemperatureSensor(coordinator),
@@ -123,23 +120,17 @@ class BM6VoltageSensor(BM6SensorEntity):
 
     _attr_has_entity_name = True
     _attr_translation_key = TRANSLATION_KEY_VOLTAGE
-    _attr_unit_of_measurement = UnitOfElectricPotential.VOLT
     _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
     _attr_device_class = SensorDeviceClass.VOLTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:flash"
 
     @property
-    def state(self):
+    def native_value(self):
+        """Return the corrected voltage. The raw value is a state attribute."""
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get(KEY_VOLTAGE_CORRECTED)
-
-    @property
-    def native_value(self):
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get(KEY_VOLTAGE_DEVICE)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -157,28 +148,21 @@ class BM6TemperatureSensor(BM6SensorEntity):
 
     _attr_has_entity_name = True
     _attr_translation_key = TRANSLATION_KEY_TEMPERATURE
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:thermometer"
 
-    @property
-    def state(self):
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get(KEY_TEMPERATURE_CORRECTED)
+    def __init__(self, coordinator: BM6DataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_native_unit_of_measurement = coordinator.temperature_unit
 
     @property
     def native_value(self):
+        """Return the corrected temperature. The raw value is a state attribute."""
         if self.coordinator.data is None:
             return None
-        return self.coordinator.data.get(KEY_TEMPERATURE_DEVICE)
-
-    @property
-    def unit_of_measurement(self):
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get(KEY_TEMPERATURE_UNIT)
+        return self.coordinator.data.get(KEY_TEMPERATURE_CORRECTED)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -200,19 +184,19 @@ class BM6PercentageSensor(BM6SensorEntity):
 
     _attr_has_entity_name = True
     _attr_translation_key = TRANSLATION_KEY_PERCENTAGE
-    _attr_unit_of_measurement = PERCENTAGE
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_device_class = SensorDeviceClass.BATTERY
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
-    def state(self) -> Optional[int]:
+    def native_value(self) -> Optional[int]:
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get(KEY_PERCENTAGE)
 
     @property
     def icon(self) -> str:
-        return Battery.percent_to_icon(self.state)
+        return Battery.percent_to_icon(self.native_value)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -324,41 +308,41 @@ class BM6DeviceStateSensor(BM6SensorEntity):
     _attr_entity_registry_enabled_default = False
 
     @property
-    def native_value(self) -> Optional[int]:
+    def _device_state(self) -> Optional[BM6RealTimeState]:
+        """Return the state reported by the device, if it is a known one."""
         if self.coordinator.data is None:
             return None
-        return self.coordinator.data.get(KEY_DEVICE_STATE)
+        try:
+            return BM6RealTimeState(self.coordinator.data.get(KEY_DEVICE_STATE))
+        except ValueError:
+            return None
 
     @property
-    def state(self) -> str:
-        native_value = self.native_value
-        if native_value is not None:
-            try:
-                device_state: BM6RealTimeState = BM6RealTimeState(native_value)
-            except ValueError:
-                # Unknown state code reported by the device - expose it as is
-                return str(native_value)
-            if device_state == BM6RealTimeState.BatteryOk:
-                return BatteryState.Ok.value
-            elif device_state == BM6RealTimeState.LowVoltage:
-                return BatteryState.LowVoltage.value
-            elif device_state == BM6RealTimeState.Charging:
-                return BatteryState.Charging.value
+    def native_value(self) -> str:
+        device_state = self._device_state
+        if device_state == BM6RealTimeState.BatteryOk:
+            return BatteryState.Ok.value
+        elif device_state == BM6RealTimeState.LowVoltage:
+            return BatteryState.LowVoltage.value
+        elif device_state == BM6RealTimeState.Charging:
+            return BatteryState.Charging.value
         return BatteryState.Unknown.value
 
     @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        if self.coordinator.data is None:
+            return {}
+        return {KEY_DEVICE_STATE: self.coordinator.data.get(KEY_DEVICE_STATE)}
+
+    @property
     def icon(self) -> str:
-        if self.native_value is not None:
-            try:
-                device_state: BM6RealTimeState = BM6RealTimeState(self.native_value)
-                if device_state == BM6RealTimeState.BatteryOk:
-                    return "mdi:battery-check"
-                elif device_state == BM6RealTimeState.LowVoltage:
-                    return "mdi:alert-octagon"
-                elif device_state == BM6RealTimeState.Charging:
-                    return "mdi:battery-charging"
-            except ValueError:
-                pass
+        device_state = self._device_state
+        if device_state == BM6RealTimeState.BatteryOk:
+            return "mdi:battery-check"
+        elif device_state == BM6RealTimeState.LowVoltage:
+            return "mdi:alert-octagon"
+        elif device_state == BM6RealTimeState.Charging:
+            return "mdi:battery-charging"
         return "mdi:battery-unknown"
 
 

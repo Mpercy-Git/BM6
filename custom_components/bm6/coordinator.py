@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from time import monotonic
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
@@ -15,6 +16,7 @@ from .utils import convert_temperature
 from .battery import Battery
 from .bm6_connect import BM6Connector, BM6Data, BM6DeviceError
 from .const import (
+    CACHED_DATA_MAX_AGE,
     CONF_TEMPERATURE_UNIT,
     DOMAIN,
     CONF_DEVICE_ADDRESS,
@@ -56,13 +58,14 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, config_entry: BM6ConfigEntry) -> None:
         """Initialize the coordinator."""
-        self.hass = hass
-        self.config_entry = config_entry
         self.device_address = config_entry.data[CONF_DEVICE_ADDRESS]
+        self.temperature_unit = config_entry.data[CONF_TEMPERATURE_UNIT]
         self._battery = Battery(config_entry.data)
+        self._last_successful_update: float | None = None
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=config_entry.data[CONF_UPDATE_INTERVAL]),
         )
@@ -77,12 +80,13 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
             voltage_corrected = (
                 data.RealTime.Voltage + self.config_entry.data[CONF_VOLTAGE_OFFSET]
             )
-            temperature_unit = self.config_entry.data[CONF_TEMPERATURE_UNIT]
+            temperature_unit = self.temperature_unit
             temperature_corrected = (
                 convert_temperature(data.RealTime.Temperature, temperature_unit)
                 + self.config_entry.data[CONF_TEMPERATURE_OFFSET]
             )
             self._battery.update(data.RealTime, voltage_corrected)
+            self._last_successful_update = monotonic()
             return {
                 KEY_VOLTAGE_DEVICE: data.RealTime.Voltage,
                 KEY_VOLTAGE_CORRECTED: voltage_corrected,
@@ -115,22 +119,43 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
                 self.device_address,
                 e,
             )
-            # Return cached data if available, otherwise raise to mark unavailable
-            if self.data is not None:
-                _LOGGER.debug("Using cached data for BM6 at %s", self.device_address)
-                return self.data
-            raise UpdateFailed(f"BM6 device error: {e}") from e
+            return self._cached_data_or_fail(f"BM6 device error: {e}", e)
         except Exception as e:
             _LOGGER.warning(
                 "Unexpected error while reading BM6 at %s (expected if device is not transmitting): %s",
                 self.device_address,
                 e,
             )
-            # Return cached data if available, otherwise raise to mark unavailable
-            if self.data is not None:
-                _LOGGER.debug("Using cached data for BM6 at %s", self.device_address)
-                return self.data
-            raise UpdateFailed(f"Unexpected error: {e}") from e
+            return self._cached_data_or_fail(f"Unexpected error: {e}", e)
+
+    def _cached_data_or_fail(self, message: str, error: Exception) -> dict:
+        """Return the last reading while it is still recent, else mark unavailable.
+
+        A BM6 that is briefly out of range should not make the sensors flap, but
+        serving a cached reading forever would hide a device that is really gone.
+        """
+        age = self._cached_data_age
+        if age is not None and age <= CACHED_DATA_MAX_AGE:
+            _LOGGER.debug(
+                "Using cached data for BM6 at %s (%.0f s old)",
+                self.device_address,
+                age,
+            )
+            return self.data
+        if age is not None:
+            _LOGGER.warning(
+                "Last reading from BM6 at %s is %.0f s old, marking it unavailable",
+                self.device_address,
+                age,
+            )
+        raise UpdateFailed(message) from error
+
+    @property
+    def _cached_data_age(self) -> float | None:
+        """Return the age of the last successful reading in seconds."""
+        if self.data is None or self._last_successful_update is None:
+            return None
+        return monotonic() - self._last_successful_update
 
     def get_diagnostic_data(self) -> dict:
         """Return diagnostic data for the BM6 device."""
@@ -140,6 +165,6 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
             "data": self.data,
             "last_update_success": self.last_update_success,
             "last_exception": self.last_exception,
-            "update_interval": self.update_interval.seconds,
-            "microsecond": self._microsecond,
+            "update_interval": self.update_interval.total_seconds(),
+            "cached_data_age": self._cached_data_age,
         }

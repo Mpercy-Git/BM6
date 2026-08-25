@@ -65,6 +65,7 @@ async def async_setup_entry(
     if not is_ha_supported():
         return False
     coordinator = BM6DataUpdateCoordinator(hass, entry)
+    await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = BM6Data(coordinator)
     if hass.data.get(DOMAIN) is None:
         hass.data.setdefault(

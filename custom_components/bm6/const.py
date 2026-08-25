@@ -7,7 +7,7 @@ from homeassistant.const import Platform, UnitOfTemperature
 NAME = "Battery Monitor BM6"
 DOMAIN = "bm6"
 VERSION = "1.0.4"
-MIN_REQUIRED_HA_VERSION = "2025.1.1"
+MIN_REQUIRED_HA_VERSION = "2025.1.4"
 
 COMPONENT = "component"
 PLATFORMS: set[Platform] = {Platform.SENSOR}
@@ -62,6 +62,9 @@ DEFAULT_TEMPERATURE_OFFSET = 0.0
 DEFAULT_TEMPERATURE_UNIT = UnitOfTemperature.CELSIUS
 
 MIN_UPDATE_INTERVAL = 10
+
+# How long the last reading keeps being served while the device cannot be read
+CACHED_DATA_MAX_AGE = 900  # seconds
 
 # Error constants
 ERROR_MAX_LESS_THAN_MIN = "max_less_than_min"
