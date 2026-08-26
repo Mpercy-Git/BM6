@@ -42,6 +42,10 @@ CONNECT_MAX_ATTEMPTS = 2
 # How often the real time data is asked for within one update when the device
 # answers with a frame that carries no reading
 REALTIME_READ_ATTEMPTS = 3
+# How long to wait for the answer to one request before asking again
+REALTIME_ANSWER_TIMEOUT = 3  # seconds
+# How long to let the device settle after connecting before asking it anything
+CONNECT_SETTLE_TIME = 1.0  # seconds
 
 # Configuration keys
 CONF_DEVICE_ADDRESS = "device_address"

@@ -23,6 +23,8 @@ from .const import (
     CRYPT_KEY,
     BLEAK_NOTIFY_TIMEOUT,
     CONNECT_MAX_ATTEMPTS,
+    CONNECT_SETTLE_TIME,
+    REALTIME_ANSWER_TIMEOUT,
     REALTIME_READ_ATTEMPTS,
     GATT_DATA_REALTIME,
     GATT_NOTIFY_REALTIME_PREFIX,
@@ -258,6 +260,9 @@ class BM6Connector:
             self._address,
             CHARACTERISTIC_UUID_NOTIFY,
         )
+        # Let the device settle before asking it anything. One that is asked the
+        # instant its connection is up can answer before it has a reading.
+        await asyncio.sleep(CONNECT_SETTLE_TIME)
         # Subscribe before asking, so a fast reply cannot arrive unnoticed
         await client.start_notify(CHARACTERISTIC_UUID_NOTIFY, self._notify_callback)
         try:
@@ -276,18 +281,23 @@ class BM6Connector:
                         response=True,
                     )
                     _LOGGER.debug("Wait for data from BM6 at %s", self._address)
-                    while (
-                        self._data.RealTime is None
-                        and self._empty_answers == answered
-                    ):
-                        await asyncio.sleep(0.1)
+                    # Ask again when the answer carries no reading, and also when
+                    # no answer arrives at all, rather than spending the whole
+                    # timeout waiting for a reply that was never sent.
+                    with suppress(TimeoutError):
+                        async with asyncio.timeout(REALTIME_ANSWER_TIMEOUT):
+                            while (
+                                self._data.RealTime is None
+                                and self._empty_answers == answered
+                            ):
+                                await asyncio.sleep(0.1)
                     if self._data.RealTime is not None:
                         _LOGGER.debug(
                             "Finishing wait for data from BM6 at %s", self._address
                         )
                         return
                     _LOGGER.debug(
-                        "BM6 at %s answered without a reading, asking again",
+                        "BM6 at %s did not answer with a reading, asking again",
                         self._address,
                     )
         except TimeoutError as e:
