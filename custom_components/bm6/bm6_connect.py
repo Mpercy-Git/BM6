@@ -128,6 +128,7 @@ class BM6Connector:
         self._address: str = address
         self._data: BM6Data | None = None
         self._empty_answers: int = 0
+        self._last_empty_answer: str | None = None
 
     def _scanner_device(self) -> Optional[BluetoothScannerDevice]:
         """Return the connectable scanner that sees the BM6 with the best signal.
@@ -185,6 +186,7 @@ class BM6Connector:
             real_time = BM6RealTimeData(message)
             if real_time.Voltage <= 0:
                 self._empty_answers += 1
+                self._last_empty_answer = message
                 # The BM6 is powered by the battery it measures, so it cannot
                 # measure zero volts. A frame like this is one the device sent
                 # before it had a reading, not a measurement, and reporting it
@@ -296,7 +298,11 @@ class BM6Connector:
         finally:
             with suppress(Exception):
                 await client.stop_notify(CHARACTERISTIC_UUID_NOTIFY)
+        # Carry the frame into the error: it is the only thing that says whether
+        # the device really answered without a reading or whether the answer was
+        # not understood, and it reaches the log without turning on debug.
         raise BM6DeviceError(
             f"BM6 at {self._address} answered without a reading "
-            f"{REALTIME_READ_ATTEMPTS} times"
+            f"{REALTIME_READ_ATTEMPTS} times, last answer was "
+            f"{self._last_empty_answer}"
         )
