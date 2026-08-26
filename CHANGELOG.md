@@ -4,7 +4,7 @@
 
 ## 1.0.9
 ### Fixed
-- All sensors could report zero. The BM6 can send a real-time frame that carries no reading yet, and it was decoded and published as an actual measurement of 0.00 V, 0 °C and 0%, which looks like a flat battery. Such a frame is ignored now and the integration waits for one that carries a reading.
+- All sensors could report zero. The BM6 can answer with a real-time frame that carries no reading, and it was decoded and published as an actual measurement of 0.00 V, 0 °C and 0%, which looks like a flat battery and can set off automations that watch for one. Such a frame is ignored now, and the reading is asked for again within the same update, so a device that answers with an empty frame first still reports its real values. When only empty frames arrive, the sensors become unavailable instead of reporting zero.
 
 ## 1.0.8
 ### Fixed
