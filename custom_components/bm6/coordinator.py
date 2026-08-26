@@ -16,6 +16,7 @@ from .utils import convert_temperature
 from .battery import Battery
 from .bm6_connect import BM6Connector, BM6Data, BM6DeviceError
 from .const import (
+    BACKED_OFF_UPDATE_INTERVAL,
     CACHED_DATA_MAX_AGE,
     CONF_TEMPERATURE_UNIT,
     DOMAIN,
@@ -62,12 +63,16 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
         self.temperature_unit = config_entry.data[CONF_TEMPERATURE_UNIT]
         self._battery = Battery(config_entry.data)
         self._last_successful_update: float | None = None
+        self._failed_updates: int = 0
+        self._configured_update_interval = timedelta(
+            seconds=config_entry.data[CONF_UPDATE_INTERVAL]
+        )
         super().__init__(
             hass,
             _LOGGER,
             config_entry=config_entry,
             name=DOMAIN,
-            update_interval=timedelta(seconds=config_entry.data[CONF_UPDATE_INTERVAL]),
+            update_interval=self._configured_update_interval,
         )
 
     async def _async_update_data(self) -> dict:
@@ -87,6 +92,7 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
             )
             self._battery.update(data.RealTime, voltage_corrected)
             self._last_successful_update = monotonic()
+            self._resume_configured_interval()
             return {
                 KEY_VOLTAGE_DEVICE: data.RealTime.Voltage,
                 KEY_VOLTAGE_CORRECTED: voltage_corrected,
@@ -115,14 +121,15 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
             }
         except BM6DeviceError as e:
             _LOGGER.warning(
-                "BM6 device unavailable at %s (expected if device is not transmitting): %s",
+                "Could not read BM6 at %s, it may be out of range or its Bluetooth "
+                "proxy may be busy: %s",
                 self.device_address,
                 e,
             )
             return self._cached_data_or_fail(f"BM6 device error: {e}", e)
         except Exception as e:
             _LOGGER.warning(
-                "Unexpected error while reading BM6 at %s (expected if device is not transmitting): %s",
+                "Unexpected error while reading BM6 at %s: %s",
                 self.device_address,
                 e,
             )
@@ -134,6 +141,7 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
         A BM6 that is briefly out of range should not make the sensors flap, but
         serving a cached reading forever would hide a device that is really gone.
         """
+        self._back_off()
         age = self._cached_data_age
         if age is not None and age <= CACHED_DATA_MAX_AGE:
             _LOGGER.debug(
@@ -149,6 +157,42 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
                 age,
             )
         raise UpdateFailed(message) from error
+
+    def _back_off(self) -> None:
+        """Read less often while the device cannot be read.
+
+        Every failed update holds a connection slot on the Bluetooth proxy for
+        as long as the connect attempts take, which is the last thing a proxy
+        that is already struggling needs. Doubling the interval leaves it room
+        to recover, and the first reading that succeeds restores the interval
+        that was configured.
+        """
+        self._failed_updates += 1
+        configured = self._configured_update_interval.total_seconds()
+        interval = min(
+            configured * 2**self._failed_updates,
+            max(configured, BACKED_OFF_UPDATE_INTERVAL),
+        )
+        if interval != self.update_interval.total_seconds():
+            _LOGGER.debug(
+                "Reading BM6 at %s failed %s times in a row, reading again in %.0f s",
+                self.device_address,
+                self._failed_updates,
+                interval,
+            )
+            self.update_interval = timedelta(seconds=interval)
+
+    def _resume_configured_interval(self) -> None:
+        """Go back to the configured interval once the device answers again."""
+        if not self._failed_updates:
+            return
+        _LOGGER.debug(
+            "BM6 at %s answered again, reading every %.0f s",
+            self.device_address,
+            self._configured_update_interval.total_seconds(),
+        )
+        self._failed_updates = 0
+        self.update_interval = self._configured_update_interval
 
     @property
     def _cached_data_age(self) -> float | None:
@@ -166,5 +210,9 @@ class BM6DataUpdateCoordinator(DataUpdateCoordinator):
             "last_update_success": self.last_update_success,
             "last_exception": self.last_exception,
             "update_interval": self.update_interval.total_seconds(),
+            "configured_update_interval": (
+                self._configured_update_interval.total_seconds()
+            ),
+            "failed_updates": self._failed_updates,
             "cached_data_age": self._cached_data_age,
         }

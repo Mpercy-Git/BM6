@@ -4,6 +4,8 @@
 
 ## 1.0.9
 ### Fixed
+- The warning logged when a reading fails said the device was probably not transmitting. It is usually the connection that fails while the device is transmitting perfectly well, so it now says what actually went wrong.
+- While a BM6 could not be read, it was retried at the configured interval, and every attempt held a connection slot on the Bluetooth proxy for as long as the connect attempts took. The interval is doubled after each failed reading, up to five minutes, and returns to the configured one as soon as the device answers again.
 - All sensors could report zero. The BM6 can answer with a real-time frame that carries no reading, and it was decoded and published as an actual measurement of 0.00 V, 0 °C and 0%, which looks like a flat battery and can set off automations that watch for one. Such a frame is ignored now, and the reading is asked for again within the same update, so a device that answers with an empty frame first still reports its real values. When only empty frames arrive, the sensors become unavailable instead of reporting zero.
 
 ## 1.0.8
