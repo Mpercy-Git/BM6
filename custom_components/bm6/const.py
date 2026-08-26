@@ -72,6 +72,8 @@ MIN_UPDATE_INTERVAL = 10
 
 # How long the last reading keeps being served while the device cannot be read
 CACHED_DATA_MAX_AGE = 900  # seconds
+# Longest interval the integration backs off to while a device cannot be read
+BACKED_OFF_UPDATE_INTERVAL = 300  # seconds
 
 # Error constants
 ERROR_MAX_LESS_THAN_MIN = "max_less_than_min"
