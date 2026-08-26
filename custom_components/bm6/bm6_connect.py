@@ -180,7 +180,19 @@ class BM6Connector:
         message = self._decrypt(data).hex()
         _LOGGER.debug("Received data from BM6 at %s: %s", self._address, message)
         if message.startswith(GATT_NOTIFY_REALTIME_PREFIX):
-            self._data.RealTime = BM6RealTimeData(message)
+            real_time = BM6RealTimeData(message)
+            if real_time.Voltage <= 0:
+                # The BM6 is powered by the battery it measures, so it cannot
+                # measure zero volts. A frame like this is one the device sent
+                # before it had a reading, not a measurement, and reporting it
+                # would look exactly like a flat battery. Wait for a real one.
+                _LOGGER.debug(
+                    "Ignoring real-time data without a reading from BM6 at %s: %s",
+                    self._address,
+                    message,
+                )
+                return
+            self._data.RealTime = real_time
             _LOGGER.debug(
                 "Decoded real-time data from BM6 at %s: %s",
                 self._address,

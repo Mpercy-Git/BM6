@@ -6,7 +6,7 @@ from homeassistant.const import Platform, UnitOfTemperature
 
 NAME = "Battery Monitor BM6"
 DOMAIN = "bm6"
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 MIN_REQUIRED_HA_VERSION = "2025.1.4"
 
 COMPONENT = "component"
