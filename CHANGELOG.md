@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## 1.0.9
+### Fixed
+- All sensors could report zero. The BM6 can send a real-time frame that carries no reading yet, and it was decoded and published as an actual measurement of 0.00 V, 0 °C and 0%, which looks like a flat battery. Such a frame is ignored now and the integration waits for one that carries a reading.
+
 ## 1.0.8
 ### Fixed
 - A BM6 that could not be read while Home Assistant started stopped the integration from setting up at all, so its sensors disappeared from dashboards and automations until the device was reachable again. The sensors are created again and report themselves unavailable until a reading arrives.
