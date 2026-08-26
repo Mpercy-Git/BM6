@@ -39,6 +39,9 @@ BLEAK_NOTIFY_TIMEOUT = 10  # Timeout
 # a single update can attempt more often than this. The connect timeout and the
 # backoff between the attempts belong to bleak_retry_connector as well.
 CONNECT_MAX_ATTEMPTS = 2
+# How often the real time data is asked for within one update when the device
+# answers with a frame that carries no reading
+REALTIME_READ_ATTEMPTS = 3
 
 # Configuration keys
 CONF_DEVICE_ADDRESS = "device_address"

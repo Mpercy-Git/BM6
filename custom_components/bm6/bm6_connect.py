@@ -23,6 +23,7 @@ from .const import (
     CRYPT_KEY,
     BLEAK_NOTIFY_TIMEOUT,
     CONNECT_MAX_ATTEMPTS,
+    REALTIME_READ_ATTEMPTS,
     GATT_DATA_REALTIME,
     GATT_NOTIFY_REALTIME_PREFIX,
     GATT_NOTIFY_VERSION_PREFIX,
@@ -126,6 +127,7 @@ class BM6Connector:
         self.hass = hass
         self._address: str = address
         self._data: BM6Data | None = None
+        self._empty_answers: int = 0
 
     def _scanner_device(self) -> Optional[BluetoothScannerDevice]:
         """Return the connectable scanner that sees the BM6 with the best signal.
@@ -182,6 +184,7 @@ class BM6Connector:
         if message.startswith(GATT_NOTIFY_REALTIME_PREFIX):
             real_time = BM6RealTimeData(message)
             if real_time.Voltage <= 0:
+                self._empty_answers += 1
                 # The BM6 is powered by the battery it measures, so it cannot
                 # measure zero volts. A frame like this is one the device sent
                 # before it had a reading, not a measurement, and reporting it
@@ -240,6 +243,10 @@ class BM6Connector:
     async def _read_real_time_data(self, client: BleakClientWithServiceCache) -> None:
         """Ask the BM6 for its real time data and wait for the notification.
 
+        The device can answer with a frame that carries no reading. Asking
+        again gets a real one, so the request is repeated inside the same
+        timeout instead of failing the whole update.
+
         The same characteristic also carries the firmware version, which is
         requested with GATT_DATA_VERSION and decoded into BM6Data.Firmware.
         """
@@ -252,21 +259,35 @@ class BM6Connector:
         # Subscribe before asking, so a fast reply cannot arrive unnoticed
         await client.start_notify(CHARACTERISTIC_UUID_NOTIFY, self._notify_callback)
         try:
-            _LOGGER.debug(
-                "Write to BM6 at %s characteristic %s",
-                self._address,
-                CHARACTERISTIC_UUID_WRITE,
-            )
-            await client.write_gatt_char(
-                CHARACTERISTIC_UUID_WRITE,
-                self._encrypt(bytearray.fromhex(GATT_DATA_REALTIME)),
-                response=True,
-            )
-            _LOGGER.debug("Wait for data from BM6 at %s", self._address)
             async with asyncio.timeout(BLEAK_NOTIFY_TIMEOUT):
-                while self._data.RealTime is None:
-                    await asyncio.sleep(0.1)
-            _LOGGER.debug("Finishing wait for data from BM6 at %s", self._address)
+                for attempt in range(1, REALTIME_READ_ATTEMPTS + 1):
+                    answered = self._empty_answers
+                    _LOGGER.debug(
+                        "Write to BM6 at %s characteristic %s, attempt %s",
+                        self._address,
+                        CHARACTERISTIC_UUID_WRITE,
+                        attempt,
+                    )
+                    await client.write_gatt_char(
+                        CHARACTERISTIC_UUID_WRITE,
+                        self._encrypt(bytearray.fromhex(GATT_DATA_REALTIME)),
+                        response=True,
+                    )
+                    _LOGGER.debug("Wait for data from BM6 at %s", self._address)
+                    while (
+                        self._data.RealTime is None
+                        and self._empty_answers == answered
+                    ):
+                        await asyncio.sleep(0.1)
+                    if self._data.RealTime is not None:
+                        _LOGGER.debug(
+                            "Finishing wait for data from BM6 at %s", self._address
+                        )
+                        return
+                    _LOGGER.debug(
+                        "BM6 at %s answered without a reading, asking again",
+                        self._address,
+                    )
         except TimeoutError as e:
             raise BM6DeviceError(
                 f"No data received from BM6 at {self._address} "
@@ -275,3 +296,7 @@ class BM6Connector:
         finally:
             with suppress(Exception):
                 await client.stop_notify(CHARACTERISTIC_UUID_NOTIFY)
+        raise BM6DeviceError(
+            f"BM6 at {self._address} answered without a reading "
+            f"{REALTIME_READ_ATTEMPTS} times"
+        )
