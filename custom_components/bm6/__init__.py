@@ -65,7 +65,12 @@ async def async_setup_entry(
     if not is_ha_supported():
         return False
     coordinator = BM6DataUpdateCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
+    # A BM6 is regularly out of range, or behind a Bluetooth proxy that has no
+    # connection slot free. Read it once so the sensors start with a value when
+    # it answers, but keep the entities when it does not: they report themselves
+    # unavailable until a reading arrives, which keeps them in dashboards and
+    # automations instead of removing them until the car comes back.
+    await coordinator.async_refresh()
     entry.runtime_data = BM6Data(coordinator)
     if hass.data.get(DOMAIN) is None:
         hass.data.setdefault(

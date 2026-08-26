@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## 1.0.8
+### Fixed
+- A BM6 that could not be read while Home Assistant started stopped the integration from setting up at all, so its sensors disappeared from dashboards and automations until the device was reachable again. The sensors are created again and report themselves unavailable until a reading arrives.
+
 ## 1.0.7
 ### Fixed
 - Multiple Bluetooth scanners/gateways: a scanner that could not be reached aborted the whole update instead of falling back to the next one, and a scanner that failed after another one had already delivered a reading discarded it. Connections now go through Home Assistant's own connection handling, which picks the scanner with the best signal that still has a free connection slot and retries with a backoff.

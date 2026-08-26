@@ -6,7 +6,7 @@ from homeassistant.const import Platform, UnitOfTemperature
 
 NAME = "Battery Monitor BM6"
 DOMAIN = "bm6"
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 MIN_REQUIRED_HA_VERSION = "2025.1.4"
 
 COMPONENT = "component"
@@ -33,8 +33,11 @@ CRYPT_KEY = bytearray(
 )
 # Timeout waiting for the real time data notification from the BM6 device
 BLEAK_NOTIFY_TIMEOUT = 10  # Timeout
-# Connection attempts per update. The connect timeout and the backoff between
-# the attempts belong to bleak_retry_connector.
+# Connect attempts per update that ended in a timeout or a connection error.
+# Errors that bleak_retry_connector considers transient, which is what a busy
+# Bluetooth proxy reports, are counted separately and against its own limit, so
+# a single update can attempt more often than this. The connect timeout and the
+# backoff between the attempts belong to bleak_retry_connector as well.
 CONNECT_MAX_ATTEMPTS = 2
 
 # Configuration keys
